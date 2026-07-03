@@ -151,8 +151,7 @@ const server = http.createServer(async (req, res) => {
       const mode = url.searchParams.get('sort') || 'createdAt';
       const headers = ['player_name','player_id','utc_time','fire_crystals','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
       const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, entry.utcTime, entry.fireCrystals, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
-      const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('
-');
+      const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="whiteout-survival-guests.csv"', 'Cache-Control': 'no-store' });
       return res.end(csv);
     }
