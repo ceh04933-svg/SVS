@@ -58,8 +58,33 @@ function cleanNumber(value) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
-function validUtcTime(value) {
-  return /^([01][0-9]|2[0-3]):(00|30)$/.test(String(value || ''));
+function utcMinutes(value) {
+  const match = String(value || '').match(/^(\d{2}):(00|30)$/);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours === 24 && minutes === 0) return 24 * 60;
+  if (hours >= 0 && hours <= 23) return hours * 60 + minutes;
+  return null;
+}
+
+function validUtcStart(value) {
+  const minutes = utcMinutes(value);
+  return minutes !== null && minutes >= 0 && minutes < 24 * 60;
+}
+
+function validUtcEnd(value) {
+  const minutes = utcMinutes(value);
+  return minutes !== null && minutes > 0 && minutes <= 24 * 60;
+}
+
+function availabilityRange(entry) {
+  if (entry.utcStart && entry.utcEnd) return entry.utcStart + ' - ' + entry.utcEnd;
+  return entry.utcTime || '';
+}
+
+function entryStartMinutes(entry) {
+  return utcMinutes(entry.utcStart || entry.utcTime) ?? 24 * 60;
 }
 
 function isHost(req) {
@@ -93,7 +118,7 @@ function sortedEntries(entries, mode = 'createdAt') {
   const modes = selectedSortModes(mode);
   const compareByMode = (a, b, sortMode) => {
     if (sortMode === 'createdAt') return new Date(b.createdAt) - new Date(a.createdAt);
-    if (sortMode === 'utcTime') return String(a.utcTime || '').localeCompare(String(b.utcTime || ''));
+    if (sortMode === 'utcTime') return entryStartMinutes(a) - entryStartMinutes(b);
     const aValue = sortMode === 'totalSpeedups' ? total(a) : Number(a[sortMode] || 0);
     const bValue = sortMode === 'totalSpeedups' ? total(b) : Number(b[sortMode] || 0);
     return bValue - aValue;
@@ -132,7 +157,8 @@ const server = http.createServer(async (req, res) => {
       id: crypto.randomUUID(),
       playerName: cleanText(body.playerName, 40),
       playerId: cleanText(body.playerId, 24),
-      utcTime: cleanText(body.utcTime, 5),
+      utcStart: cleanText(body.utcStart || body.utcTime, 5),
+      utcEnd: cleanText(body.utcEnd, 5),
       fireCrystals: cleanNumber(body.fireCrystals),
       generalSpeedups: cleanNumber(body.generalSpeedups),
       constructionSpeedups: cleanNumber(body.constructionSpeedups),
@@ -141,9 +167,12 @@ const server = http.createServer(async (req, res) => {
       language: cleanText(body.language, 12),
       createdAt: new Date().toISOString()
     };
-    if (!entry.playerName || !entry.playerId || !validUtcTime(entry.utcTime)) {
-      return sendJson(res, 400, { error: 'Missing required guest information.' });
+    const startMinutes = utcMinutes(entry.utcStart);
+    const endMinutes = utcMinutes(entry.utcEnd);
+    if (!entry.playerName || !entry.playerId || !validUtcStart(entry.utcStart) || !validUtcEnd(entry.utcEnd) || endMinutes <= startMinutes) {
+      return sendJson(res, 400, { error: 'Please choose a valid UTC availability range.' });
     }
+    entry.utcTime = availabilityRange(entry);
     const entries = await readEntries();
     entries.unshift(entry);
     await saveEntries(entries);
@@ -175,8 +204,8 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/admin/export.csv') {
       const mode = url.searchParams.get('sort') || 'createdAt';
-      const headers = ['player_name','player_id','utc_time','fire_crystals','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
-      const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, entry.utcTime, entry.fireCrystals, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
+      const headers = ['player_name','player_id','availability_utc','fire_crystals','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
+      const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, availabilityRange(entry), entry.fireCrystals, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
       const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="whiteout-survival-guests.csv"', 'Cache-Control': 'no-store' });
       return res.end(csv);
