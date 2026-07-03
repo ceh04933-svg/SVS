@@ -71,13 +71,39 @@ function csvEscape(value) {
   return '"' + String(value ?? '').replaceAll('"', '""') + '"';
 }
 
+function selectedSortModes(value = 'createdAt') {
+  const allowed = new Set([
+    'createdAt',
+    'utcTime',
+    'totalSpeedups',
+    'generalSpeedups',
+    'constructionSpeedups',
+    'researchSpeedups',
+    'trainingSpeedups'
+  ]);
+  const modes = String(value || '')
+    .split(',')
+    .map(mode => mode.trim())
+    .filter(mode => allowed.has(mode));
+  return modes.length ? modes : ['createdAt'];
+}
+
 function sortedEntries(entries, mode = 'createdAt') {
   const total = entry => Number(entry.generalSpeedups || 0) + Number(entry.constructionSpeedups || 0) + Number(entry.researchSpeedups || 0) + Number(entry.trainingSpeedups || 0);
+  const modes = selectedSortModes(mode);
+  const compareByMode = (a, b, sortMode) => {
+    if (sortMode === 'createdAt') return new Date(b.createdAt) - new Date(a.createdAt);
+    if (sortMode === 'utcTime') return String(a.utcTime || '').localeCompare(String(b.utcTime || ''));
+    const aValue = sortMode === 'totalSpeedups' ? total(a) : Number(a[sortMode] || 0);
+    const bValue = sortMode === 'totalSpeedups' ? total(b) : Number(b[sortMode] || 0);
+    return bValue - aValue;
+  };
   return [...entries].sort((a, b) => {
-    if (mode === 'createdAt') return new Date(b.createdAt) - new Date(a.createdAt);
-    const aValue = mode === 'totalSpeedups' ? total(a) : Number(a[mode] || 0);
-    const bValue = mode === 'totalSpeedups' ? total(b) : Number(b[mode] || 0);
-    return bValue - aValue || new Date(b.createdAt) - new Date(a.createdAt);
+    for (const sortMode of modes) {
+      const result = compareByMode(a, b, sortMode);
+      if (result) return result;
+    }
+    return new Date(b.createdAt) - new Date(a.createdAt);
   });
 }
 
