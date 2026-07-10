@@ -58,6 +58,12 @@ function cleanNumber(value) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : 0;
 }
 
+function cleanRequestedDays(value) {
+  const allowed = new Set(['construction', 'research', 'training']);
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return [...new Set(values.map(item => String(item || '').trim()).filter(item => allowed.has(item)))];
+}
+
 function utcMinutes(value) {
   const match = String(value || '').match(/^(\d{2}):(00|30)$/);
   if (!match) return null;
@@ -81,6 +87,16 @@ function validUtcEnd(value) {
 function availabilityRange(entry) {
   if (entry.utcStart && entry.utcEnd) return entry.utcStart + ' - ' + entry.utcEnd;
   return entry.utcTime || '';
+}
+
+function requestedDaysText(entry) {
+  const labels = {
+    construction: 'Construction',
+    research: 'Research',
+    training: 'Troop training'
+  };
+  const days = Array.isArray(entry.requestedDays) ? entry.requestedDays : [];
+  return days.map(day => labels[day] || day).join('; ');
 }
 
 function entryStartMinutes(entry) {
@@ -160,6 +176,8 @@ const server = http.createServer(async (req, res) => {
       utcStart: cleanText(body.utcStart || body.utcTime, 5),
       utcEnd: cleanText(body.utcEnd, 5),
       fireCrystals: cleanNumber(body.fireCrystals),
+      fireCrystalShards: cleanNumber(body.fireCrystalShards),
+      requestedDays: cleanRequestedDays(body.requestedDays),
       generalSpeedups: cleanNumber(body.generalSpeedups),
       constructionSpeedups: cleanNumber(body.constructionSpeedups),
       researchSpeedups: cleanNumber(body.researchSpeedups),
@@ -171,6 +189,9 @@ const server = http.createServer(async (req, res) => {
     const endMinutes = utcMinutes(entry.utcEnd);
     if (!entry.playerName || !entry.playerId || !validUtcStart(entry.utcStart) || !validUtcEnd(entry.utcEnd) || endMinutes <= startMinutes) {
       return sendJson(res, 400, { error: 'Please choose a valid UTC availability range.' });
+    }
+    if (!entry.requestedDays.length) {
+      return sendJson(res, 400, { error: 'Please choose at least one requested buff day.' });
     }
     entry.utcTime = availabilityRange(entry);
     const entries = await readEntries();
@@ -204,8 +225,8 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/admin/export.csv') {
       const mode = url.searchParams.get('sort') || 'createdAt';
-      const headers = ['player_name','player_id','availability_utc','fire_crystals','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
-      const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, availabilityRange(entry), entry.fireCrystals, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
+      const headers = ['player_name','player_id','availability_utc','requested_buff_days','fire_crystals','fire_crystal_shards','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
+      const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, availabilityRange(entry), requestedDaysText(entry), entry.fireCrystals, entry.fireCrystalShards || 0, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
       const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="whiteout-survival-guests.csv"', 'Cache-Control': 'no-store' });
       return res.end(csv);
