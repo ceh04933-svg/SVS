@@ -9,12 +9,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, 'public');
 const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
 const dataFile = path.join(dataDir, 'entries.json');
-const hostPin = process.env.HOST_PIN || '2468';
-const hostToken = crypto.randomBytes(32).toString('hex');
+const pinFile = path.join(dataDir, 'host-pin.json');
+const changePasswordHash = '8b91b53a11e5ed0edb7d37e9405b44fb46255a2e18ce3b835587fbccd4e5e445';
+let hostPin = process.env.HOST_PIN || '2468';
+let hostToken = crypto.randomBytes(32).toString('hex');
 const port = Number(process.env.PORT || 3000);
 
 await mkdir(dataDir, { recursive: true });
 if (!existsSync(dataFile)) await writeFile(dataFile, '[]', 'utf8');
+if (existsSync(pinFile)) {
+  const saved = JSON.parse(await readFile(pinFile, 'utf8'));
+  if (typeof saved.pin === 'string' && saved.pin) hostPin = saved.pin;
+}
+
+function matchesPassword(value) {
+  const actual = crypto.createHash('sha256').update(String(value || '')).digest();
+  const expected = Buffer.from(changePasswordHash, 'hex');
+  return crypto.timingSafeEqual(actual, expected);
+}
 
 function send(res, status, body, headers = {}) {
   const payload = typeof body === 'string' ? body : JSON.stringify(body);
@@ -212,6 +224,17 @@ const server = http.createServer(async (req, res) => {
 
   if (url.pathname.startsWith('/api/admin/')) {
     if (!isHost(req)) return sendJson(res, 401, { error: 'Host login required.' });
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/change-pin') {
+      const body = await parseBody(req);
+      if (!matchesPassword(body.password)) return sendJson(res, 403, { error: 'Incorrect change password.' });
+      const newPin = String(body.newPin || '');
+      if (!/^\d{4,20}$/.test(newPin)) return sendJson(res, 400, { error: 'New PIN must be 4 to 20 digits.' });
+      await writeFile(pinFile, JSON.stringify({ pin: newPin }), { encoding: 'utf8', mode: 0o600 });
+      hostPin = newPin;
+      hostToken = crypto.randomBytes(32).toString('hex');
+      return sendJson(res, 200, { ok: true }, { 'Set-Cookie': 'host_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0' });
+    }
 
     if (req.method === 'GET' && url.pathname === '/api/admin/entries') {
       const mode = url.searchParams.get('sort') || 'createdAt';
