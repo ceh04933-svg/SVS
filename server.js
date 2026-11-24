@@ -189,6 +189,7 @@ const server = http.createServer(async (req, res) => {
       utcEnd: cleanText(body.utcEnd, 5),
       fireCrystals: cleanNumber(body.fireCrystals),
       fireCrystalShards: cleanNumber(body.fireCrystalShards),
+      refinedFireCrystals: cleanNumber(body.refinedFireCrystals),
       requestedDays: cleanRequestedDays(body.requestedDays),
       generalSpeedups: cleanNumber(body.generalSpeedups),
       constructionSpeedups: cleanNumber(body.constructionSpeedups),
@@ -248,8 +249,8 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/api/admin/export.csv') {
       const mode = url.searchParams.get('sort') || 'createdAt';
-      const headers = ['player_name','player_id','availability_utc','requested_buff_days','fire_crystals','fire_crystal_shards','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
-      const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, availabilityRange(entry), requestedDaysText(entry), entry.fireCrystals, entry.fireCrystalShards || 0, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
+      const headers = ['player_name','player_id','availability_utc','requested_buff_days','fire_crystals','fire_crystal_shards','refined_fire_crystals','general_speedups_days','construction_speedups_days','research_speedups_days','troop_training_speedups_days','submitted_at'];
+      const rows = sortedEntries(await readEntries(), mode).map(entry => [entry.playerName, entry.playerId, availabilityRange(entry), requestedDaysText(entry), entry.fireCrystals, entry.fireCrystalShards || 0, entry.refinedFireCrystals || 0, entry.generalSpeedups, entry.constructionSpeedups, entry.researchSpeedups, entry.trainingSpeedups, entry.createdAt]);
       const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
       res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="whiteout-survival-guests.csv"', 'Cache-Control': 'no-store' });
       return res.end(csv);
